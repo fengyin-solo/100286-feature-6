@@ -28,14 +28,37 @@ class Store:
         return None
 
     def overview(self) -> dict[str, object]:
+        # 乔木的待处理/异常口径挂在复壮明细上，标志位随处置链实时重算，
+        # 不能直接信种子数据里写死的 pending/abnormal。
+        tree_flags: dict[int, tuple[bool, bool]] = {}
+        tree_module = "tree"
+        try:
+            from app.services.tree import MODULE as TREE_MODULE
+            from app.services.tree import TreeService
+
+            tree_module = TREE_MODULE
+            tree_service = TreeService()
+            tree_flags = {
+                int(row.get("id", 0)): (tree_service.is_pending(row), tree_service.is_abnormal(row))
+                for row in self.rows(TREE_MODULE)
+            }
+        except Exception:  # pragma: no cover - 看板不能因为单模块口径异常而整体不可用
+            tree_flags = {}
+
         modules: list[dict[str, object]] = []
         for name in self.module_names():
             rows = self.rows(name)
+            if name == tree_module and tree_flags:
+                pending = sum(1 for row in rows if tree_flags.get(int(row.get("id", 0)), (False, False))[0])
+                abnormal = sum(1 for row in rows if tree_flags.get(int(row.get("id", 0)), (False, False))[1])
+            else:
+                pending = sum(1 for row in rows if row.get("pending"))
+                abnormal = sum(1 for row in rows if row.get("abnormal"))
             modules.append({
                 "name": name,
                 "created": len(rows),
-                "pending": sum(1 for row in rows if row.get("pending")),
-                "abnormal": sum(1 for row in rows if row.get("abnormal")),
+                "pending": pending,
+                "abnormal": abnormal,
             })
         cards = [
             {"label": "业务模块", "value": len(modules)},
